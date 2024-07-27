@@ -1,0 +1,153 @@
+import numpy as np
+from scipy.stats import zscore
+from sklearn.model_selection import train_test_split
+import pickle
+from typing import Tuple, List, Optional, Callable
+
+
+def load_data(path_to_opened: str,
+              path_to_closed: str):
+    """ Function for loading the data from pickle files
+
+    The function loads two datasets from the given paths, normalizes them using z-score normalization,
+    concatenates them along the second axis, and generates the corresponding labels and groups.
+
+    :param path_to_opened: Path to the pickle file containing the 'opened' dataset.
+    :param path_to_closed: Path to the pickle file containing the 'closed' dataset.
+    :return: A tuple containing:
+             - X: Concatenated and normalized dataset.
+             - y: Labels for the data (0 for 'closed', 1 for 'opened').
+             - groups: Group identifiers for the samples.
+
+    """
+
+    closed = np.load(path_to_closed)
+    opened = np.load(path_to_opened)
+
+    closed = zscore(closed)
+    opened = zscore(opened)
+    X = np.concatenate([closed, opened], axis=0)
+
+    num_people = closed.shape[0]
+    num_states = 2
+    y = np.array([0] * num_people + [1] * num_people)
+    groups = np.tile(np.arange(num_people), num_states)
+    return X, y, groups
+
+
+def get_random_split(X: np.ndarray,
+                     y: np.ndarray,
+                     groups: np.ndarray,
+                     is_real_data: Optional[np.ndarray]=None,
+                     test_size: float = 0.2,
+                     random_state: int = 42,
+                     shuffle_train: bool = True) -> Tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    unique_groups = np.unique(groups)
+    train_groups, test_groups = train_test_split(unique_groups,
+                                                 test_size=test_size,
+                                                 random_state=random_state)
+    train_index = np.isin(groups, train_groups)
+    test_index = np.isin(groups, test_groups)
+
+    X_train, X_test = X[train_index], X[test_index]
+    y_train, y_test = y[train_index], y[test_index]
+    groups_train, groups_test = groups[train_index], groups[test_index]
+    if is_real_data is not None:
+        is_real_test = is_real_data[test_index]
+        X_test = X_test[is_real_test]
+        y_test = y_test[is_real_test]
+        groups_test = groups_test[is_real_test]
+    if shuffle_train:
+        indices = np.arange(X_train.shape[0])
+        np.random.shuffle(indices)
+        X_train = X_train[indices]
+        y_train = y_train[indices]
+        groups_train = groups_train[indices]
+
+    return X_train, X_test, y_train, y_test, groups_train, groups_test
+
+
+
+
+
+def get_multiple_splits(X: np.ndarray,
+                        y: np.ndarray,
+                        groups: np.ndarray,
+                        is_real_data: Optional[np.ndarray]=None,
+                        test_size: float = 0.2,
+                        random_seeds: Optional[List[int]] = None) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """
+        Generates multiple random splits of the data based on different random seeds.
+
+        Parameters:
+        - X: np.ndarray - Features array.
+        - y: np.ndarray - Target array.
+        - groups: np.ndarray - Groups array.
+        - is_real_data: np.ndarray - Boolean array indicating whether the data is real or not.
+        - test_size: float - Proportion of the dataset to include in the test split.
+        - random_seeds: Optional[List[int]] - List of random seeds for reproducibility. If None, generates 10 random seeds.
+
+        Returns:
+        - List of tuples, each containing (X_train, X_test, y_train, y_test, train_groups, test_groups)
+        """
+
+
+    if random_seeds is None:
+        np.random.seed(42)  # Ensure reproducibility of the generated seeds
+        random_seeds = np.random.randint(0, 10000, size=10).tolist()
+
+    splits = []
+    for seed in random_seeds:
+        splits.append(get_random_split(X, y, groups, is_real_data, test_size, seed))
+    return splits
+
+
+def augment_data(augmentation_func: Callable,
+                 X: np.ndarray,
+                 y: np.ndarray,
+                 groups: np.ndarray,
+                 n_aug = 1) -> Tuple[np.ndarray, np.ndarray,np. ndarray, np.ndarray]:
+    """
+    Applies an augmentation function to the data and returns the augmented data along with indicators.
+    Data consists from X, labels and groups.
+
+    Args:
+        augmentation_func (Callable[[Any], Any]): Function to augment the data, one examlple.
+        - X: np.ndarray - Features array.
+        - y: np.ndarray - Target array.
+        - groups: np.ndarray - Groups array.
+        - n_aug: int - Number of augmentations.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray,np. ndarray, np.ndarray]: A tuple containing the array of augmented data
+         corresponede labels and groups and array of indicators,
+         where True indicates real data and False indicates augmented data.
+    """
+
+    new_shape = (X.shape[0] * (n_aug+1), *X.shape[1:])
+    augmented_data = np.empty(new_shape)
+    is_real_data = np.empty((X.shape[0]*(n_aug+1),), dtype=bool)
+    y_augmented = np.empty((X.shape[0]*(n_aug+1),), dtype=int)
+    groups_augmented = np.empty((X.shape[0]*(n_aug+1),), dtype=int)
+
+    augmented_data[:X.shape[0],:] = X
+    is_real_data[:X.shape[0]] = True
+    y_augmented[:X.shape[0]] = y
+    groups_augmented[:X.shape[0]] = groups
+
+
+
+    for k in range(1,n_aug+1):
+        augmented_array = np.array([augmentation_func(slice) for slice in X])
+        augmented_data[X.shape[0]*k:X.shape[0]*(k+1), :] = augmented_array
+        is_real_data[X.shape[0]*k:X.shape[0]*(k+1)] = False
+        y_augmented[X.shape[0]*k:X.shape[0]*(k+1)] = y
+        groups_augmented[X.shape[0]*k:X.shape[0]*(k+1)] = groups
+
+
+    return augmented_data, y_augmented, groups_augmented, is_real_data
+
+
+
+
