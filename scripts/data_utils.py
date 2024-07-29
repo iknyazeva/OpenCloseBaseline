@@ -3,10 +3,36 @@ from scipy.stats import zscore
 from sklearn.model_selection import train_test_split
 import pickle
 from typing import Tuple, List, Optional, Callable
+from nilearn.connectome import ConnectivityMeasure
+import numpy as np
+
+
+#TODO function for ICA aggregation
+def networks_aggregation():
+    pass
+
+
+def get_connectome(timeseries: np.ndarray,
+                   conn_type: str = 'corr') -> np.ndarray:
+    
+    if conn_type == 'corr':
+        conn = ConnectivityMeasure(kind='correlation', standardize=False).fit_transform(timeseries)
+        conn[conn == 1] = 0.999999
+
+        for i in conn:
+            np.fill_diagonal(i, 0)
+
+        conn = np.arctanh(conn)
+    
+    else:
+        raise NotImplementedError
+    
+    return conn
 
 
 def load_data(path_to_opened: str,
               path_to_closed: str):
+    
     """ Function for loading the data from pickle files
 
     The function loads two datasets from the given paths, normalizes them using z-score normalization,
@@ -32,6 +58,7 @@ def load_data(path_to_opened: str,
     num_states = 2
     y = np.array([0] * num_people + [1] * num_people)
     groups = np.tile(np.arange(num_people), num_states)
+
     return X, y, groups
 
 
@@ -43,21 +70,25 @@ def get_random_split(X: np.ndarray,
                      random_state: int = 42,
                      shuffle_train: bool = True) -> Tuple[
     np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    
     unique_groups = np.unique(groups)
     train_groups, test_groups = train_test_split(unique_groups,
                                                  test_size=test_size,
                                                  random_state=random_state)
+    
     train_index = np.isin(groups, train_groups)
     test_index = np.isin(groups, test_groups)
 
     X_train, X_test = X[train_index], X[test_index]
     y_train, y_test = y[train_index], y[test_index]
     groups_train, groups_test = groups[train_index], groups[test_index]
+
     if is_real_data is not None:
         is_real_test = is_real_data[test_index]
         X_test = X_test[is_real_test]
         y_test = y_test[is_real_test]
         groups_test = groups_test[is_real_test]
+
     if shuffle_train:
         indices = np.arange(X_train.shape[0])
         np.random.shuffle(indices)
@@ -66,9 +97,6 @@ def get_random_split(X: np.ndarray,
         groups_train = groups_train[indices]
 
     return X_train, X_test, y_train, y_test, groups_train, groups_test
-
-
-
 
 
 def get_multiple_splits(X: np.ndarray,
@@ -92,7 +120,6 @@ def get_multiple_splits(X: np.ndarray,
         - List of tuples, each containing (X_train, X_test, y_train, y_test, train_groups, test_groups)
         """
 
-
     if random_seeds is None:
         np.random.seed(42)  # Ensure reproducibility of the generated seeds
         random_seeds = np.random.randint(0, 10000, size=10).tolist()
@@ -100,6 +127,7 @@ def get_multiple_splits(X: np.ndarray,
     splits = []
     for seed in random_seeds:
         splits.append(get_random_split(X, y, groups, is_real_data, test_size, seed))
+
     return splits
 
 
@@ -110,7 +138,7 @@ def augment_data(augmentation_func: Callable,
                  n_aug = 1) -> Tuple[np.ndarray, np.ndarray,np. ndarray, np.ndarray]:
     """
     Applies an augmentation function to the data and returns the augmented data along with indicators.
-    Data consists from X, labels and groups.
+    Data consists of X, labels and groups.
 
     Args:
         augmentation_func (Callable[[Any], Any]): Function to augment the data, one examlple.
@@ -121,7 +149,7 @@ def augment_data(augmentation_func: Callable,
 
     Returns:
         Tuple[np.ndarray, np.ndarray,np. ndarray, np.ndarray]: A tuple containing the array of augmented data
-         corresponede labels and groups and array of indicators,
+         corresponding labels and groups and array of indicators,
          where True indicates real data and False indicates augmented data.
     """
 
@@ -136,15 +164,12 @@ def augment_data(augmentation_func: Callable,
     y_augmented[:X.shape[0]] = y
     groups_augmented[:X.shape[0]] = groups
 
-
-
     for k in range(1,n_aug+1):
         augmented_array = np.array([augmentation_func(slice) for slice in X])
         augmented_data[X.shape[0]*k:X.shape[0]*(k+1), :] = augmented_array
         is_real_data[X.shape[0]*k:X.shape[0]*(k+1)] = False
         y_augmented[X.shape[0]*k:X.shape[0]*(k+1)] = y
         groups_augmented[X.shape[0]*k:X.shape[0]*(k+1)] = groups
-
 
     return augmented_data, y_augmented, groups_augmented, is_real_data
 

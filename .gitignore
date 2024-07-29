@@ -4,3 +4,4 @@ data/
 /.ipynb_checkpoints
 /.mypy_cache
 # created by virtualenv automatically
+scripts/__pycache__
