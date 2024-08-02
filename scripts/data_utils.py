@@ -5,6 +5,7 @@ import pickle
 from typing import Tuple, List, Optional, Callable
 from nilearn.connectome import ConnectivityMeasure
 import numpy as np
+import h5py
 
 
 #TODO function for ICA aggregation
@@ -30,16 +31,27 @@ def get_connectome(timeseries: np.ndarray,
     return conn
 
 
-def load_data(path_to_opened: str,
-              path_to_closed: str):
+def load_hdf5(path):
+    opened, closed = np.zeros((84, 120, 420)), np.zeros((84, 120, 420))
+    with h5py.File(path, "r") as data:
+        for i in range(84):
+            opened[i] = data[f'sub-{i+1:03d}']['opened'][:]
+            closed[i] = data[f'sub-{i+1:03d}']['closed'][:]
+
+    return opened, closed
+
+
+def load_data(path_to_dataset: str,
+              path_to_idx: Optional[str]=None):
     
     """ Function for loading the data from pickle files
 
-    The function loads two datasets from the given paths, normalizes them using z-score normalization,
+    The function loads two datasets from given paths, normalizes them using z-score normalization,
     concatenates them along the second axis, and generates the corresponding labels and groups.
 
-    :param path_to_opened: Path to the pickle file containing the 'opened' dataset.
-    :param path_to_closed: Path to the pickle file containing the 'closed' dataset.
+    :param path_to_opened: Path to a hdf5 file containing the 'opened' dataset.
+    :param path_to_closed: Path to a hdf5 file containing the 'closed' dataset.
+    :param path_to_idx: Path to a hdf5 file containing subject indexes.
     :return: A tuple containing:
              - X: Concatenated and normalized dataset.
              - y: Labels for the data (0 for 'closed', 1 for 'opened').
@@ -47,17 +59,22 @@ def load_data(path_to_opened: str,
 
     """
 
-    closed = np.load(path_to_closed)
-    opened = np.load(path_to_opened)
+    opened, closed = load_hdf5(path_to_dataset)
 
-    closed = zscore(closed)
-    opened = zscore(opened)
+    closed = zscore(closed, nan_policy='omit')
+    opened = zscore(opened, nan_policy='omit')
+    
+    np.nan_to_num(closed, copy=False)
+    np.nan_to_num(opened, copy=False)
+
     X = np.concatenate([closed, opened], axis=0)
 
-    num_people = closed.shape[0]
+    # fix у китайцев разное количество открытых и закрытых
+    n_closed, n_opened = closed.shape[0], opened.shape[0]
+    #num_people = n_closed + n_opened
     num_states = 2
-    y = np.array([0] * num_people + [1] * num_people)
-    groups = np.tile(np.arange(num_people), num_states)
+    y = np.array([0] * n_closed + [1] * n_opened)
+    groups = np.tile(np.arange(n_closed), num_states)
 
     return X, y, groups
 

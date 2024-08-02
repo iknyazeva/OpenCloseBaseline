@@ -1,4 +1,5 @@
 from unittest import TestCase
+import unittest
 
 import numpy as np
 from augmentation_models import augmentaion_noise_jittering
@@ -12,15 +13,14 @@ from scripts.data_utils import (load_data,
 class Test(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.path_to_open = '../data/opened_ihb.npy'
-        cls.path_to_close = '../data/closed_ihb.npy'
+        cls.path_to_dataset = '/data/Projects/OpenCloseIHB/ihb_dataset.hdf5'
 
     def test_load_data(self):
-        X, y, groups = load_data(self.path_to_open, self.path_to_close)
+        X, y, groups = load_data(self.path_to_dataset)
         y_vals = np.unique(y)
-        self.assertTrue(X.shape == (168,120, 423))
+        self.assertTrue(X.shape == (168, 120, 423))
         self.assertTrue(list(y_vals) == [0, 1])
-        self.assertEqual(len(groups),len(y))
+        self.assertEqual(len(groups), len(y))
         self.assertEqual(len(groups), X.shape[0])
 
     def test_get_random_split(self):
@@ -74,3 +74,5 @@ class Test(TestCase):
 
         self.assertEqual(len(train_unique.intersection(test_unique)),0)
 
+if __name__ == '__main__':
+    unittest.main()
