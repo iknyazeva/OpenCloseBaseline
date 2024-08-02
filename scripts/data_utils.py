@@ -32,26 +32,44 @@ def get_connectome(timeseries: np.ndarray,
 
 
 def load_hdf5(path):
-    opened, closed = np.zeros((84, 120, 420)), np.zeros((84, 120, 420))
+    """ Function loads dataset by given path and sorts data by label.
+
+    :param path: Path to a hdf5 file containing the dataset.
+    :return: A tuple containing:
+        - open eyes data.
+        - closed eyes data.
+        - groups: closed eyes first, then open eyes.
+        
+    """
+    
+    opened, closed = [], []
+    groups_op, groups_cl = [], []
+
     with h5py.File(path, "r") as data:
-        for i in range(84):
-            opened[i] = data[f'sub-{i+1:03d}']['opened'][:]
-            closed[i] = data[f'sub-{i+1:03d}']['closed'][:]
 
-    return opened, closed
+        for en, sub in enumerate(data.keys()):
+
+            for opened_key in [i for i in list(data[sub].keys()) if 'open' in i]:
+                opened.append(data[sub][opened_key][:])
+                groups_op.append(en)
+
+            for closed_key in [i for i in list(data[sub].keys()) if 'closed' in i]:
+                closed.append(data[sub][closed_key][:])
+                groups_cl.append(en)
+
+    return (np.array(opened, dtype=float), 
+            np.array(closed, dtype=float), 
+            np.array(groups_cl + groups_op, dtype=int))
 
 
-def load_data(path_to_dataset: str,
-              path_to_idx: Optional[str]=None):
+def load_data(path_to_dataset: str):
     
     """ Function for loading the data from pickle files
 
-    The function loads two datasets from given paths, normalizes them using z-score normalization,
-    concatenates them along the second axis, and generates the corresponding labels and groups.
+    The function loads dataset from given path, normalizes it using z-score normalization, 
+    and generates the corresponding labels and groups.
 
-    :param path_to_opened: Path to a hdf5 file containing the 'opened' dataset.
-    :param path_to_closed: Path to a hdf5 file containing the 'closed' dataset.
-    :param path_to_idx: Path to a hdf5 file containing subject indexes.
+    :param path_to_dataset: Path to a hdf5 file containing the dataset.
     :return: A tuple containing:
              - X: Concatenated and normalized dataset.
              - y: Labels for the data (0 for 'closed', 1 for 'opened').
@@ -59,7 +77,7 @@ def load_data(path_to_dataset: str,
 
     """
 
-    opened, closed = load_hdf5(path_to_dataset)
+    opened, closed, groups = load_hdf5(path_to_dataset)
 
     closed = zscore(closed, nan_policy='omit')
     opened = zscore(opened, nan_policy='omit')
@@ -69,12 +87,8 @@ def load_data(path_to_dataset: str,
 
     X = np.concatenate([closed, opened], axis=0)
 
-    # fix у китайцев разное количество открытых и закрытых
     n_closed, n_opened = closed.shape[0], opened.shape[0]
-    #num_people = n_closed + n_opened
-    num_states = 2
     y = np.array([0] * n_closed + [1] * n_opened)
-    groups = np.tile(np.arange(n_closed), num_states)
 
     return X, y, groups
 
